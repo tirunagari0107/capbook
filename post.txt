@@ -1,0 +1,222 @@
+@Override
+	public Post sendPost( String message) throws UserNotFoundException {
+		Person user=userDao.findById(sessionEmailId).orElseThrow(()->new UserNotFoundException("Sorry User Not Found!!!")); 
+		Post post =new Post(user, message,  new Date());
+		List<Person>friends =friendList(sessionEmailId);	
+		for (Person friend : friends) {
+			notificationDAO.save(new Notifications(friend,getUserAccountDetails(sessionEmailId).getFirstName()+" posted on his timeline"));
+		}
+		postDAO.save(post);	
+		return post;
+	}
+	@Override
+	public List<Post> getAllPosts() throws UserNotFoundException {
+		List<Post> posts=new ArrayList<Post>();
+		posts.addAll(myPosts(sessionEmailId));
+		for(Person friend:friendList(sessionEmailId))
+			posts.addAll(myPosts(friend.getEmailId()));
+		Collections.sort(posts);
+		return posts;
+	}
+	@Override
+	public List<Post> myPosts(String emailId) throws UserNotFoundException {
+		Person user=userDao.findById(emailId).orElseThrow(()->new UserNotFoundException("Sorry User Not Found!!!")); 
+		List<Post> myPosts= postDAO.getMyPosts(user);
+		Collections.sort(myPosts);
+		return myPosts;
+	}
+
+
+
+
+-------------------------------------------------
+package com.cg.capbook.beans;
+import java.util.Date;
+import javax.persistence.Entity;
+import javax.persistence.GeneratedValue;
+import javax.persistence.Id;
+import javax.persistence.JoinColumn;
+import javax.persistence.ManyToOne;
+@Entity
+public class Post implements Comparable<Post>{
+	@Id
+	@GeneratedValue
+	private int postId;
+	@ManyToOne
+	@JoinColumn(referencedColumnName = "emailId")
+	private Person user;
+	private String message;
+	private Date time;
+	private int likes;
+	
+	public Post() {}
+	
+	public Post(Person user, String message, Date time) {
+		super();
+		this.user = user;
+		this.message = message;
+		this.time = time;
+	}
+	public int getPostId() {
+		return postId;
+	}
+	public void setPostId(int postId) {
+		this.postId = postId;
+	}
+	public String getMessage() {
+		return message;
+	}
+	public void setMessage(String message) {
+		this.message = message;
+	}
+	public Date getTime() {
+		return time;
+	}
+	public void setTime(Date time) {
+		this.time = time;
+	}	
+	public Person getUser() {
+		return user;
+	}
+	public void setUser(Person user) {
+		this.user = user;
+	}
+	@Override
+	public int compareTo(Post post) {
+		return post.getTime().compareTo(getTime());
+	}
+}
+
+-------------------------------------------------\
+package com.cg.capbook.controller;
+import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import com.cg.capbook.beans.Post;
+import com.cg.capbook.exceptions.UserNotFoundException;
+import com.cg.capbook.services.UserServices;
+@RestController
+@CrossOrigin
+public class PostController {
+	@Autowired
+	UserServices userServices;
+	@RequestMapping(value="/sendPost",method=RequestMethod.GET)
+	public ResponseEntity<Post> acceptPostDetails(@RequestParam("message") String message){
+		try {
+			return new ResponseEntity<>(userServices.sendPost( message),HttpStatus.OK);
+		} catch (UserNotFoundException e) {
+			
+			return new ResponseEntity<>(HttpStatus.OK);
+		}	
+	}
+	@RequestMapping(value="/myPosts",method=RequestMethod.GET,produces=MediaType.APPLICATION_JSON_VALUE)
+	public ResponseEntity<List<Post>> getMyPosts(@RequestParam("emailId")String emailId){
+		try {
+			return new ResponseEntity<>(userServices.myPosts(emailId),HttpStatus.OK);
+		} catch (UserNotFoundException e) {
+			
+			return new ResponseEntity<>(HttpStatus.OK);
+		}	
+	}
+	@RequestMapping(value="/getAllPosts",method=RequestMethod.GET,produces=MediaType.APPLICATION_JSON_VALUE)
+	public ResponseEntity<List<Post>> getAllPosts(){
+		try {
+			return new ResponseEntity<>(userServices.getAllPosts(),HttpStatus.OK);
+		} catch (UserNotFoundException e) {
+			
+			return new ResponseEntity<>(HttpStatus.OK);
+		}	
+	}
+}
+---------------------------------------------------
+
+package com.cg.capbook.daoservices;
+import java.util.List;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
+import com.cg.capbook.beans.Person;
+import com.cg.capbook.beans.Post;
+public interface PostDAO extends JpaRepository<Post, Integer> {
+	@Query("SELECT p from Post p where p.user=:user")
+	List<Post> getMyPosts(@Param("user")Person user);
+}
+-------------------------------------------
+
+
+<table class='table'>
+    <tr>
+      <td><input type="text" name="message" [(ngModel)]="message"></td>
+      <td><a class='btn btn-default'(click)='onClickedPost()'>Post</a></td>
+    </tr>
+    </table>
+    <div class="body">
+        <div class="timeline" *ngFor='let post of postsList' >
+            <div class="container left">
+              <div class="content">
+                <h2>Posted BY:</h2>
+                <h2>{{post.user.firstName}}</h2>
+                <b> at {{post.time|date:'MM/dd/yyyy hh:mm'}}</b><br><br><br>
+                <p>{{post.message}}</p>
+              </div>
+            </div>
+          </div>
+  </div> 
+
+--------------------------------------------
+
+
+
+
+ngOnInit() {
+    this.user = JSON.parse(sessionStorage.getItem('user'));
+    this.userService.getAllPosts().subscribe(
+      tempPosts=>{
+        this.posts=tempPosts;
+        this.postsList=this.posts;
+      }
+     
+    );
+    
+  }
+
+
+
+
+onClickedPost(){
+    this.userService.sendPost(this._message).subscribe(
+      post=>{
+        this.post=post;
+        this.router.navigate(['/timeline']);
+        this.ngOnInit();
+       
+      }
+     
+    );
+    
+  }
+----------------------------------------
+
+public sendPost(message:string):Observable<Post>{
+    let params = new HttpParams();
+    params = params.set('message', message.toString());
+    console.log(params);
+    return this.httpClient.get<Post>("http://localhost:5001/sendPost",{params : params}).pipe(catchError(this.handleError));
+    
+  }
+  public getAllPosts():Observable<Post[]>{
+    return this.httpClient.get<Post[]>("http://localhost:5001/getAllPosts",).pipe(catchError(this.handleError));
+    
+  }
+
+
+
+
